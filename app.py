@@ -19,6 +19,7 @@ from psx_utils import (
     get_kse100_tickers,
     fetch_stock_data,
     get_stock_data,
+    get_bundled_tickers,
     get_live_quote,
     add_technical_indicators,
     build_features_and_labels,
@@ -40,8 +41,16 @@ CACHE_TTL_SECONDS = 15 * 60
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def get_ticker_universe():
-    tickers = get_kse100_tickers(limit=20)
-    return tickers if tickers else FALLBACK_TICKERS
+    """
+    Build the selectable ticker list. Always includes every ticker that has a
+    bundled CSV snapshot (guaranteed to work even if PSX is unreachable live),
+    plus anything from a live KSE-100 fetch if that happens to succeed — so the
+    dropdown never offers a stock that then fails when selected.
+    """
+    bundled = get_bundled_tickers()
+    live = get_kse100_tickers(limit=None)
+    combined = sorted(set(bundled) | set(live)) if live else bundled
+    return combined if combined else FALLBACK_TICKERS
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
