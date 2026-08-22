@@ -6,7 +6,6 @@ Reuses psx_utils.py (same logic as the companion Colab notebook) so the analysis
 shown here is consistent with what's documented/demonstrated in the notebook.
 """
 
-import time
 from datetime import datetime
 
 import pandas as pd
@@ -29,107 +28,86 @@ from psx_utils import (
 )
 import psx_utils as _psx_utils_module
 
-st.set_page_config(page_title="PSX Stock Analytics", page_icon="📈", layout="wide")
+st.set_page_config(page_title="PSX Stock Analytics", page_icon="▪", layout="wide")
 
 # --------------------------------------------------------------------------- #
-# Custom styling — Streamlit's defaults are intentionally plain; this layers a
-# cleaner look on top (card-style KPIs, colored signal badges, tighter type)
-# without touching any of the underlying logic above.
+# Design tokens (kept in sync with .streamlit/config.toml, which sets
+# Streamlit's own native widget theme to the same dark palette so selectboxes,
+# tabs, sliders, buttons, and alerts all match this custom CSS automatically).
 # --------------------------------------------------------------------------- #
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+:root {
+    --bg-card: #161b22;
+    --border: #263041;
+    --border-strong: #334155;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #5b6472;
+    --accent: #3b82f6;
+    --accent-soft: rgba(59, 130, 246, 0.12);
+    --up: #4ade80;
+    --down: #f87171;
+    --hold: #fbbf24;
 }
 
-.block-container {
-    padding-top: 1.5rem;
-    padding-bottom: 3rem;
-    max-width: 1100px;
-}
+html, body, [class*="css"] { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
 
-/* Header */
-.psx-header {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 2px;
-}
-.psx-header .logo { font-size: 1.9rem; line-height: 1; }
-.psx-header h1 {
-    margin: 0;
-    font-size: 1.85rem;
-    font-weight: 700;
-    color: #0f172a;
-    letter-spacing: -0.01em;
-}
-.psx-subtitle {
-    color: #64748b;
-    font-size: 0.95rem;
-    margin-bottom: 1.4rem;
-}
-.psx-sidebar-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 2px;
-}
-.psx-sidebar-header .logo { font-size: 1.5rem; }
-.psx-sidebar-header .name { font-size: 1.15rem; font-weight: 700; color: #0f172a; }
+.block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1100px; }
 
-/* KPI card grid */
-.kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin: 0.9rem 0 1.3rem;
+/* Top bar */
+.psx-topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 1.7rem; }
+.psx-mark {
+    width: 38px; height: 38px; border-radius: 8px;
+    background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.8rem;
+    letter-spacing: 0.02em; flex-shrink: 0;
 }
-.kpi-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 16px 18px;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-}
-.kpi-label {
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #64748b;
-    font-weight: 600;
-    margin-bottom: 8px;
-}
-.kpi-value { font-size: 1.5rem; font-weight: 700; color: #0f172a; line-height: 1.15; }
-.kpi-value.up { color: #16a34a; }
-.kpi-value.down { color: #dc2626; }
-.kpi-sub { font-size: 0.8rem; font-weight: 600; margin-top: 6px; }
-.kpi-sub.up { color: #16a34a; }
-.kpi-sub.down { color: #dc2626; }
-.kpi-sub.neutral { color: #64748b; }
+.psx-title { font-size: 1.35rem; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; line-height: 1.3; }
+.psx-eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-muted); margin-top: 2px; }
+
+.psx-sidebar-mark { display: flex; align-items: center; gap: 9px; margin-bottom: 2px; }
+.psx-sidebar-mark .psx-mark { width: 30px; height: 30px; font-size: 0.65rem; }
+.psx-sidebar-mark .name { font-size: 1.02rem; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; }
+
+/* KPI cards */
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0.9rem 0 1.4rem; }
+.kpi-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.kpi-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 600; margin-bottom: 9px; }
+.kpi-value { font-family: 'JetBrains Mono', monospace; font-size: 1.5rem; font-weight: 600; color: var(--text-primary); line-height: 1.15; }
+.kpi-value.up { color: var(--up); }
+.kpi-value.down { color: var(--down); }
+.kpi-sub { font-family: 'JetBrains Mono', monospace; font-size: 0.76rem; font-weight: 600; margin-top: 7px; }
+.kpi-sub.up { color: var(--up); }
+.kpi-sub.down { color: var(--down); }
+.kpi-sub.neutral { color: var(--text-muted); }
 
 /* Signal badge */
 .signal-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 12px;
-    border-radius: 999px;
-    font-weight: 700;
-    font-size: 1.15rem;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 3px 12px; border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 1.05rem;
 }
-.signal-badge.buy  { background: #dcfce7; color: #15803d; }
-.signal-badge.hold { background: #fef3c7; color: #b45309; }
-.signal-badge.sell { background: #fee2e2; color: #b91c1c; }
+.signal-badge.buy  { background: rgba(74, 222, 128, 0.12); color: var(--up); }
+.signal-badge.hold { background: rgba(251, 191, 36, 0.12); color: var(--hold); }
+.signal-badge.sell { background: rgba(248, 113, 113, 0.12); color: var(--down); }
 
 /* Sidebar */
-[data-testid="stSidebar"] { background: #f8fafc; border-right: 1px solid #e2e8f0; }
-[data-testid="stSidebar"] .stCaption { color: #94a3b8; }
+[data-testid="stSidebar"] { border-right: 1px solid var(--border); }
+[data-testid="stSidebar"] hr { border-color: var(--border); }
 
 /* Section headers */
-h2, h3 { color: #0f172a; font-weight: 600; }
+h2, h3 { color: var(--text-primary); font-weight: 600; letter-spacing: -0.005em; }
+
+/* Tabs — slightly more spacing */
+.stTabs [data-baseweb="tab-list"] { gap: 4px; }
+
+/* Dataframe corners */
+[data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -208,48 +186,62 @@ def scan_watchlist(tickers: list, years_back: int):
     return pd.DataFrame(rows)
 
 
+# Shared dark-theme layout for every Plotly chart in the app
+CHART_LAYOUT = dict(
+    plot_bgcolor="#161b22",
+    paper_bgcolor="#161b22",
+    font=dict(family="Inter, sans-serif", color="#8b949e", size=12),
+    margin=dict(l=10, r=10, t=36, b=10),
+)
+CHART_GRID = "#263041"
+
+
 # --------------------------------------------------------------------------- #
 # Sidebar
 # --------------------------------------------------------------------------- #
 
 st.sidebar.markdown("""
-<div class="psx-sidebar-header">
-  <span class="logo">📈</span>
-  <span class="name">PSX Analytics</span>
+<div class="psx-sidebar-mark">
+  <div class="psx-mark">PSX</div>
+  <span class="name">Analytics</span>
 </div>
 """, unsafe_allow_html=True)
-st.sidebar.caption("Data: PSX Data Portal (EOD) · Not a licensed real-time feed")
+st.sidebar.caption("PSX Data Portal (EOD) · Not a licensed real-time feed")
+st.sidebar.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
 TICKERS = get_ticker_universe()
 
 ticker = st.sidebar.selectbox("Select stock", TICKERS, index=0)
 years_back = st.sidebar.slider("History window (years)", 1, 5, 3)
 
-if st.sidebar.button("🔄 Refresh data now"):
+if st.sidebar.button("Refresh data now", use_container_width=True):
     st.cache_data.clear()
 
-st.sidebar.markdown("---")
+st.sidebar.divider()
 st.sidebar.markdown(
-    "**Disclaimer:** Educational decision-support tool. Signals are based on "
-    "historical technical + ML patterns and are **not financial advice**. "
-    "Markets carry risk — verify independently before acting on real capital."
+    "**Disclaimer**  \n"
+    "Educational decision-support tool. Signals are based on historical "
+    "technical + ML patterns and are **not financial advice**. Markets carry "
+    "risk — verify independently before acting on real capital."
 )
 st.sidebar.caption(f"Last loaded: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
-                    f"(cache refreshes every {CACHE_TTL_SECONDS // 60} min)")
+                    f"· cache refreshes every {CACHE_TTL_SECONDS // 60} min")
 
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 
 st.markdown("""
-<div class="psx-header">
-  <span class="logo">🇵🇰</span>
-  <h1>Pakistan Stock Exchange — Analytics &amp; Signal Dashboard</h1>
+<div class="psx-topbar">
+  <div class="psx-mark">PSX</div>
+  <div>
+    <div class="psx-title">Analytics &amp; signal dashboard</div>
+    <div class="psx-eyebrow">Pakistan Stock Exchange · KSE-100</div>
+  </div>
 </div>
-<div class="psx-subtitle">Technical indicators + machine learning signals for KSE-100 stocks</div>
 """, unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["📊 Stock Detail", "🧭 Watchlist Scan", "ℹ️ About"])
+tab1, tab2, tab3 = st.tabs(["Stock detail", "Watchlist scan", "About"])
 
 with tab1:
     with st.spinner(f"Fetching {ticker} from PSX and running model..."):
@@ -265,7 +257,7 @@ with tab1:
         df = result["df"]
 
         if result.get("source") == "bundled":
-            st.info(f"⚠️ Live PSX fetch unavailable from this server — showing a snapshot "
+            st.info(f"Live PSX fetch unavailable from this server — showing a snapshot "
                      f"as of **{result['as_of']}** (bundled with the app). "
                      f"Click 'Refresh data now' to retry live fetch.")
 
@@ -289,7 +281,7 @@ with tab1:
           </div>
           <div class="kpi-card">
             <div class="kpi-label">Trend</div>
-            <div class="kpi-value" style="font-size:1.25rem">{sig['trend']}</div>
+            <div class="kpi-value" style="font-size:1.2rem">{sig['trend']}</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-label">RSI (14)</div>
@@ -312,30 +304,29 @@ with tab1:
 
         # Price + indicators chart
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.5, 0.25, 0.25],
-                             subplot_titles=("Price + Moving Averages", "RSI (14)", "MACD"))
+                             subplot_titles=("Price + moving averages", "RSI (14)", "MACD"))
         fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name="Close",
-                                  line=dict(color="#2563eb", width=2)), row=1, col=1)
+                                  line=dict(color="#3b82f6", width=2)), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df["SMA50"], name="SMA50",
-                                  line=dict(color="#f59e0b", width=1.3)), row=1, col=1)
+                                  line=dict(color="#fbbf24", width=1.2)), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df["SMA200"], name="SMA200",
-                                  line=dict(color="#94a3b8", width=1.3)), row=1, col=1)
+                                  line=dict(color="#5b6472", width=1.2)), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI",
-                                  line=dict(color="#7c3aed", width=1.5)), row=2, col=1)
-        fig.add_hline(y=70, line_dash="dot", line_color="#dc2626", row=2, col=1)
-        fig.add_hline(y=30, line_dash="dot", line_color="#16a34a", row=2, col=1)
+                                  line=dict(color="#a78bfa", width=1.5)), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dot", line_color="#f87171", line_width=1, row=2, col=1)
+        fig.add_hline(y=30, line_dash="dot", line_color="#4ade80", line_width=1, row=2, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], name="MACD",
-                                  line=dict(color="#2563eb", width=1.5)), row=3, col=1)
+                                  line=dict(color="#3b82f6", width=1.5)), row=3, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df["MACD_signal"], name="Signal",
-                                  line=dict(color="#f59e0b", width=1.5)), row=3, col=1)
-        fig.update_layout(height=700, showlegend=True, plot_bgcolor="white", paper_bgcolor="white",
-                           font=dict(family="Inter, sans-serif", color="#334155"),
-                           margin=dict(l=10, r=10, t=40, b=10))
-        fig.update_xaxes(gridcolor="#f1f5f9")
-        fig.update_yaxes(gridcolor="#f1f5f9")
+                                  line=dict(color="#fbbf24", width=1.5)), row=3, col=1)
+        fig.update_layout(height=700, showlegend=True, **CHART_LAYOUT)
+        fig.update_xaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
+        fig.update_yaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
+        fig.update_annotations(font=dict(color="#8b949e", size=12))
         st.plotly_chart(fig, use_container_width=True)
 
         # Backtest
-        st.subheader("Backtest — Strategy vs Buy & Hold")
+        st.subheader("Backtest — strategy vs buy & hold")
         bt = result["backtest_summary"]
         strat_class = "up" if bt["strategy_return_pct"] >= 0 else "down"
         bh_class = "up" if bt["buy_and_hold_return_pct"] >= 0 else "down"
@@ -359,15 +350,13 @@ with tab1:
         eq = result["equity_df"]
         fig2 = go.Figure()
         fig2.add_trace(go.Scatter(x=eq.index, y=eq["equity"], name="Strategy",
-                                   line=dict(color="#2563eb", width=2)))
-        fig2.add_trace(go.Scatter(x=eq.index, y=eq["buy_and_hold"], name="Buy & Hold",
-                                   line=dict(color="#94a3b8", width=2, dash="dot")))
-        fig2.update_layout(height=350, xaxis_title="Date", yaxis_title="Portfolio Value (PKR)",
-                            plot_bgcolor="white", paper_bgcolor="white",
-                            font=dict(family="Inter, sans-serif", color="#334155"),
-                            margin=dict(l=10, r=10, t=20, b=10))
-        fig2.update_xaxes(gridcolor="#f1f5f9")
-        fig2.update_yaxes(gridcolor="#f1f5f9")
+                                   line=dict(color="#3b82f6", width=2)))
+        fig2.add_trace(go.Scatter(x=eq.index, y=eq["buy_and_hold"], name="Buy & hold",
+                                   line=dict(color="#5b6472", width=2, dash="dot")))
+        fig2.update_layout(height=340, xaxis_title="Date", yaxis_title="Portfolio value (PKR)",
+                            **CHART_LAYOUT)
+        fig2.update_xaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
+        fig2.update_yaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
         st.plotly_chart(fig2, use_container_width=True)
 
         if not result["trades_df"].empty:
@@ -384,9 +373,9 @@ with tab2:
             st.warning("No results — try different tickers.")
         else:
             def highlight(row):
-                color = {"BUY": "background-color: #dcfce7; color: #15803d;",
-                         "SELL": "background-color: #fee2e2; color: #b91c1c;",
-                         "HOLD": "background-color: #fef3c7; color: #b45309;"}.get(row["Decision"], "")
+                color = {"BUY": "background-color: rgba(74,222,128,0.14); color: #4ade80;",
+                         "SELL": "background-color: rgba(248,113,113,0.14); color: #f87171;",
+                         "HOLD": "background-color: rgba(251,191,36,0.14); color: #fbbf24;"}.get(row["Decision"], "")
                 return [color] * len(row)
             st.dataframe(scan_df.style.apply(highlight, axis=1), use_container_width=True)
 
