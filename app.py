@@ -6,7 +6,7 @@ Reuses psx_utils.py (same logic as the companion Colab notebook) so the analysis
 shown here is consistent with what's documented/demonstrated in the notebook.
 """
 
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -56,10 +56,12 @@ st.markdown("""
 
 html, body, [class*="css"] { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
 
-.block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1100px; }
+/* Extra top clearance so the header never sits under Streamlit Cloud's
+   floating Share/star/edit/GitHub toolbar in the top-right corner. */
+.block-container { padding-top: 3.4rem; padding-bottom: 3rem; max-width: none; }
 
 /* Top bar */
-.psx-topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 1.7rem; }
+.psx-topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem; }
 .psx-mark {
     width: 38px; height: 38px; border-radius: 8px;
     background: var(--accent-soft); color: var(--accent);
@@ -74,8 +76,16 @@ html, body, [class*="css"] { font-family: 'Inter', -apple-system, BlinkMacSystem
 .psx-sidebar-mark .psx-mark { width: 30px; height: 30px; font-size: 0.65rem; }
 .psx-sidebar-mark .name { font-size: 1.02rem; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; }
 
-/* KPI cards */
-.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0.9rem 0 1.4rem; }
+.psx-quick-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; margin: 10px 0 4px; }
+
+/* Sidebar quick-select + refresh buttons: compact, mono, pill-like */
+[data-testid="stSidebar"] .stButton button {
+    font-size: 0.76rem; font-family: 'JetBrains Mono', monospace;
+    padding: 4px 6px; border-radius: 6px;
+}
+
+/* KPI cards — responsive grid that stretches to fill the row at any width */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 0.9rem 0 1.4rem; }
 .kpi-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
 .kpi-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 600; margin-bottom: 9px; }
 .kpi-value { font-family: 'JetBrains Mono', monospace; font-size: 1.5rem; font-weight: 600; color: var(--text-primary); line-height: 1.15; }
@@ -96,15 +106,26 @@ html, body, [class*="css"] { font-family: 'Inter', -apple-system, BlinkMacSystem
 .signal-badge.hold { background: rgba(251, 191, 36, 0.12); color: var(--hold); }
 .signal-badge.sell { background: rgba(248, 113, 113, 0.12); color: var(--down); }
 
+/* Chart explanation panel (sits beside each chart) */
+.chart-note {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; height: 100%;
+}
+.chart-note .t { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 600; margin-bottom: 10px; }
+.chart-note p { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; margin: 0 0 10px; }
+.chart-note p:last-child { margin-bottom: 0; }
+.chart-note b { color: var(--text-primary); }
+
+/* Sidebar disclaimer — smaller, muted */
+.psx-disclaimer { font-size: 0.76rem; line-height: 1.55; color: var(--text-secondary); }
+.psx-disclaimer b { color: var(--text-primary); }
+
 /* Sidebar */
 [data-testid="stSidebar"] { border-right: 1px solid var(--border); }
 [data-testid="stSidebar"] hr { border-color: var(--border); }
 
 /* Section headers */
 h2, h3 { color: var(--text-primary); font-weight: 600; letter-spacing: -0.005em; }
-
-/* Tabs — slightly more spacing */
-.stTabs [data-baseweb="tab-list"] { gap: 4px; }
 
 /* Dataframe corners */
 [data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
@@ -117,6 +138,10 @@ h2, h3 { color: var(--text-primary); font-weight: 600; letter-spacing: -0.005em;
 # --------------------------------------------------------------------------- #
 
 CACHE_TTL_SECONDS = 15 * 60
+
+# Curated liquid names for the sidebar quick-select row — filtered against
+# whatever tickers actually exist (bundled/live) so it never offers a dead pick.
+POPULAR_CANDIDATES = ["OGDC", "PPL", "LUCK", "ENGRO", "HBL", "MCB", "UBL", "PSO"]
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
@@ -207,22 +232,51 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 st.sidebar.caption("PSX Data Portal (EOD) · Not a licensed real-time feed")
-st.sidebar.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
 TICKERS = get_ticker_universe()
+POPULAR_TICKERS = [t for t in POPULAR_CANDIDATES if t in TICKERS]
 
-ticker = st.sidebar.selectbox("Select stock", TICKERS, index=0)
-years_back = st.sidebar.slider("History window (years)", 1, 5, 3)
+if "ticker" not in st.session_state:
+    st.session_state.ticker = POPULAR_TICKERS[0] if POPULAR_TICKERS else TICKERS[0]
+
+if POPULAR_TICKERS:
+    st.sidebar.markdown('<div class="psx-quick-label">Most active</div>', unsafe_allow_html=True)
+    for row_start in range(0, len(POPULAR_TICKERS), 4):
+        row_tickers = POPULAR_TICKERS[row_start:row_start + 4]
+        cols = st.sidebar.columns(4)
+        for i, t in enumerate(row_tickers):
+            if cols[i].button(t, key=f"quick_{t}", use_container_width=True):
+                st.session_state.ticker = t
+                st.rerun()
+
+st.sidebar.markdown('<div class="psx-quick-label">All stocks</div>', unsafe_allow_html=True)
+ticker = st.sidebar.selectbox(
+    "Select stock", TICKERS,
+    index=TICKERS.index(st.session_state.ticker) if st.session_state.ticker in TICKERS else 0,
+    label_visibility="collapsed",
+)
+st.session_state.ticker = ticker
+
+st.sidebar.markdown('<div class="psx-quick-label">History window</div>', unsafe_allow_html=True)
+default_end = date.today()
+default_start = default_end - timedelta(days=365 * 3)
+dcol1, dcol2 = st.sidebar.columns(2)
+start_date = dcol1.date_input("From", value=default_start, max_value=default_end)
+end_date = dcol2.date_input("To", value=default_end, max_value=default_end)
+# Underlying fetch always pulls enough history for SMA200 + model training;
+# the date range above controls what the price chart displays, not the fetch.
+years_back = max(3, ((default_end - start_date).days // 365) + 1)
 
 if st.sidebar.button("Refresh data now", use_container_width=True):
     st.cache_data.clear()
 
 st.sidebar.divider()
 st.sidebar.markdown(
-    "**Disclaimer**  \n"
+    '<div class="psx-disclaimer"><b>Disclaimer</b><br>'
     "Educational decision-support tool. Signals are based on historical "
-    "technical + ML patterns and are **not financial advice**. Markets carry "
-    "risk — verify independently before acting on real capital."
+    "technical + ML patterns and are <b>not financial advice</b>. Markets carry "
+    "risk — verify independently before acting on real capital.</div>",
+    unsafe_allow_html=True,
 )
 st.sidebar.caption(f"Last loaded: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
                     f"· cache refreshes every {CACHE_TTL_SECONDS // 60} min")
@@ -256,16 +310,14 @@ with tab1:
         raw = result["raw"]
         df = result["df"]
 
-        if result.get("source") == "bundled":
-            st.info(f"Live PSX fetch unavailable from this server — showing a snapshot "
-                     f"as of **{result['as_of']}** (bundled with the app). "
-                     f"Click 'Refresh data now' to retry live fetch.")
-
         decision_class = sig["decision"].lower()
         decision_icon = {"buy": "▲", "hold": "●", "sell": "▼"}[decision_class]
         pct_change = raw["Close"].pct_change().iloc[-1] * 100
         pct_class = "up" if pct_change >= 0 else "down"
         pct_arrow = "▲" if pct_change >= 0 else "▼"
+        latest_macd = df["MACD"].iloc[-1]
+        macd_class = "up" if latest_macd >= 0 else "down"
+        latest_volume = raw["Volume"].iloc[-1]
 
         st.markdown(f"""
         <div class="kpi-grid">
@@ -287,6 +339,14 @@ with tab1:
             <div class="kpi-label">RSI (14)</div>
             <div class="kpi-value">{sig['rsi']:.1f}</div>
           </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Volume</div>
+            <div class="kpi-value" style="font-size:1.2rem">{latest_volume:,.0f}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">MACD</div>
+            <div class="kpi-value {macd_class}">{latest_macd:+.2f}</div>
+          </div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -302,28 +362,48 @@ with tab1:
             else:
                 st.caption("Live snapshot unavailable right now — showing EOD data only.")
 
-        # Price + indicators chart
+        # Price + indicators chart, sliced to the selected From/To range,
+        # with an explanation panel filling the space beside it.
+        chart_df = df.loc[str(start_date):str(end_date)]
+        if chart_df.empty:
+            chart_df = df
+
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.5, 0.25, 0.25],
                              subplot_titles=("Price + moving averages", "RSI (14)", "MACD"))
-        fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name="Close",
+        fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["Close"], name="Close",
                                   line=dict(color="#3b82f6", width=2)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["SMA50"], name="SMA50",
+        fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["SMA50"], name="SMA50",
                                   line=dict(color="#fbbf24", width=1.2)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["SMA200"], name="SMA200",
+        fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["SMA200"], name="SMA200",
                                   line=dict(color="#5b6472", width=1.2)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI",
+        fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["RSI"], name="RSI",
                                   line=dict(color="#a78bfa", width=1.5)), row=2, col=1)
         fig.add_hline(y=70, line_dash="dot", line_color="#f87171", line_width=1, row=2, col=1)
         fig.add_hline(y=30, line_dash="dot", line_color="#4ade80", line_width=1, row=2, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], name="MACD",
+        fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["MACD"], name="MACD",
                                   line=dict(color="#3b82f6", width=1.5)), row=3, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["MACD_signal"], name="Signal",
+        fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["MACD_signal"], name="Signal",
                                   line=dict(color="#fbbf24", width=1.5)), row=3, col=1)
         fig.update_layout(height=700, showlegend=True, **CHART_LAYOUT)
         fig.update_xaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
         fig.update_yaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
         fig.update_annotations(font=dict(color="#8b949e", size=12))
-        st.plotly_chart(fig, use_container_width=True)
+
+        chart_col, note_col = st.columns([2.2, 1])
+        with chart_col:
+            st.plotly_chart(fig, use_container_width=True)
+        with note_col:
+            st.markdown("""
+            <div class="chart-note">
+              <div class="t">What this shows</div>
+              <p><b>Price panel</b> — closing price vs 50-day and 200-day moving averages.
+              SMA50 above SMA200 signals an uptrend (golden cross); below signals a downtrend.</p>
+              <p><b>RSI panel</b> — momentum, 0–100. Above 70 = overbought (possible pullback),
+              below 30 = oversold (possible bounce).</p>
+              <p><b>MACD panel</b> — trend momentum. MACD crossing above its signal line
+              often precedes upward moves, and vice versa.</p>
+            </div>
+            """, unsafe_allow_html=True)
 
         # Backtest
         st.subheader("Backtest — strategy vs buy & hold")
@@ -331,7 +411,7 @@ with tab1:
         strat_class = "up" if bt["strategy_return_pct"] >= 0 else "down"
         bh_class = "up" if bt["buy_and_hold_return_pct"] >= 0 else "down"
         st.markdown(f"""
-        <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="kpi-grid">
           <div class="kpi-card">
             <div class="kpi-label">Strategy return</div>
             <div class="kpi-value {strat_class}">{bt['strategy_return_pct']:+.2f}%</div>
@@ -357,11 +437,33 @@ with tab1:
                             **CHART_LAYOUT)
         fig2.update_xaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
         fig2.update_yaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
-        st.plotly_chart(fig2, use_container_width=True)
+
+        eqchart_col, eqnote_col = st.columns([2.2, 1])
+        with eqchart_col:
+            st.plotly_chart(fig2, use_container_width=True)
+        with eqnote_col:
+            outperform_html = ("The strategy <b>outperformed</b> passive holding"
+                                if bt['strategy_return_pct'] > bt['buy_and_hold_return_pct']
+                                else "Passive holding <b>outperformed</b> the strategy")
+            st.markdown(f"""
+            <div class="chart-note">
+              <div class="t">What this shows</div>
+              <p>Portfolio value if you'd mechanically followed this model's Buy/Sell
+              signals (<b>blue</b>) vs simply buying and holding the stock the whole
+              period (<b>gray, dashed</b>).</p>
+              <p>{outperform_html} over this backtest window — {bt['num_trades']} trades were made.</p>
+            </div>
+            """, unsafe_allow_html=True)
 
         if not result["trades_df"].empty:
             with st.expander("Trade log (backtest period)"):
                 st.dataframe(result["trades_df"], use_container_width=True)
+
+        # Data-source notice goes last — supplementary info, not the headline.
+        if result.get("source") == "bundled":
+            st.info(f"Live PSX fetch unavailable from this server — the analysis above uses "
+                     f"a snapshot as of **{result['as_of']}** (bundled with the app). "
+                     f"Click 'Refresh data now' in the sidebar to retry live fetch.")
 
 with tab2:
     st.subheader("Watchlist signal scan")
