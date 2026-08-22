@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 import psxdata
 from psxdata import exceptions as psx_exceptions
+from pathlib import Path
 
 from sklearn.ensemble import RandomForestClassifier
 
@@ -138,6 +139,82 @@ def get_live_quote(ticker: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         print(f"[get_live_quote] Failed for {ticker}: {type(exc).__name__}: {exc}")
         return {}
+
+
+# --------------------------------------------------------------------------- #
+# Bundled-snapshot fallback
+#
+# PSX blocks some cloud/data-center IP ranges (observed: both a sandboxed dev
+# environment and Streamlit Community Cloud got rejected — first with a 403,
+# then with a connection failure — while Google Colab's IP was NOT blocked).
+# To keep the deployed dashboard usable regardless of PSX's IP policy on any
+# given host, we fetch data once from a host PSX allows (Colab) and bundle it
+# as CSV files in the repo. The app tries a live fetch first and transparently
+# falls back to this snapshot if PSX is unreachable from wherever it's hosted.
+# --------------------------------------------------------------------------- #
+
+def save_bundled_data(ticker: str, df: pd.DataFrame, data_dir: str = "data") -> str:
+    """Save a fetched DataFrame as data/{ticker}.csv for later fallback use."""
+    Path(data_dir).mkdir(parents=True, exist_ok=True)
+    path = Path(data_dir) / f"{ticker}.csv"
+    df.reset_index().rename(columns={"index": "Date"}).to_csv(path, index=False)
+    return str(path)
+
+
+# psx_utils.py always lives in the repo root alongside the data/ folder. When a
+# relative data_dir is given, resolve it against this file's own location rather
+# than the process's current working directory — some hosting environments (e.g.
+# Streamlit Community Cloud) don't guarantee cwd == repo root, which silently
+# breaks a plain relative "data" path even though the folder exists in the repo.
+_MODULE_DIR = Path(__file__).resolve().parent
+
+
+def _resolve_data_dir(data_dir: str) -> Path:
+    p = Path(data_dir)
+    return p if p.is_absolute() else (_MODULE_DIR / p)
+
+
+def load_bundled_data(ticker: str, data_dir: str = "data") -> pd.DataFrame:
+    """Load a previously-saved data/{ticker}.csv snapshot. Empty DataFrame if missing."""
+    path = _resolve_data_dir(data_dir) / f"{ticker}.csv"
+    if not path.exists():
+        print(f"[load_bundled_data] No file at {path}")
+        return pd.DataFrame()
+    try:
+        df = pd.read_csv(path, parse_dates=["Date"])
+        df = df.set_index("Date").sort_index()
+        keep_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
+        return df[keep_cols]
+    except Exception as exc:  # noqa: BLE001
+        print(f"[load_bundled_data] Failed to read {path}: {exc}")
+        return pd.DataFrame()
+
+
+def get_stock_data(ticker: str, years_back: int = 3, data_dir: str = "data"):
+    """
+    Try a live PSX fetch first; if that fails (blocked IP, network error, etc.),
+    fall back to a bundled CSV snapshot if one exists.
+
+    Returns (df, source, as_of) where source is "live", "bundled", or "none",
+    and as_of is the most recent date in the returned data (or None).
+    """
+    global LAST_FETCH_ERROR
+
+    df = fetch_stock_data(ticker, years_back=years_back)
+    if not df.empty:
+        return df, "live", df.index.max().date()
+    live_error = LAST_FETCH_ERROR
+
+    bundled = load_bundled_data(ticker, data_dir=data_dir)
+    if not bundled.empty:
+        return bundled, "bundled", bundled.index.max().date()
+
+    resolved_path = _resolve_data_dir(data_dir) / f"{ticker}.csv"
+    LAST_FETCH_ERROR = (
+        f"Live fetch failed: {live_error} | "
+        f"Bundled fallback also failed: no readable file at {resolved_path}."
+    )
+    return pd.DataFrame(), "none", None
 
 
 def diagnose_connection(ticker: str = "OGDC") -> None:
