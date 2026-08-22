@@ -29,6 +29,10 @@ from sklearn.ensemble import RandomForestClassifier
 
 warnings.filterwarnings("ignore")
 
+# Holds the human-readable reason for the most recent failed fetch, so the
+# Streamlit UI can surface it directly instead of a generic "no data" message.
+LAST_FETCH_ERROR: str | None = None
+
 # Liquid, well-known fallback tickers, used only if the live KSE-100 constituent
 # fetch fails for some reason.
 FALLBACK_TICKERS = [
@@ -74,9 +78,12 @@ def fetch_stock_data(ticker: str, years_back: int = 3) -> pd.DataFrame:
     """
     end = date.today()
     start = end - timedelta(days=365 * years_back)
+    global LAST_FETCH_ERROR
+    LAST_FETCH_ERROR = None
     try:
         df = psxdata.stocks(ticker, start=start, end=end)
         if df is None or df.empty:
+            LAST_FETCH_ERROR = f"PSX returned zero rows for '{ticker}' in this date range."
             print(f"[fetch_stock_data] {ticker}: no rows returned for this range.")
             return pd.DataFrame()
 
@@ -91,20 +98,28 @@ def fetch_stock_data(ticker: str, years_back: int = 3) -> pd.DataFrame:
         return df[keep_cols]
 
     except psx_exceptions.InvalidSymbolError:
-        print(f"[fetch_stock_data] '{ticker}' is not a valid/recognized PSX symbol.")
+        LAST_FETCH_ERROR = f"'{ticker}' is not a valid/recognized PSX symbol."
+        print(f"[fetch_stock_data] {LAST_FETCH_ERROR}")
     except psx_exceptions.DelistedSymbolError:
-        print(f"[fetch_stock_data] '{ticker}' appears to be delisted.")
+        LAST_FETCH_ERROR = f"'{ticker}' appears to be delisted."
+        print(f"[fetch_stock_data] {LAST_FETCH_ERROR}")
     except psx_exceptions.PSXAuthError as exc:
-        print(f"[fetch_stock_data] {ticker}: PSX rejected the request (auth/403): {exc}")
-        print("  -> This can happen from data-center IPs (e.g. some cloud sandboxes). "
-              "Try again from Colab directly — it usually has a normal residential/cloud IP "
-              "that PSX doesn't block.")
+        LAST_FETCH_ERROR = (
+            f"PSX rejected the request for '{ticker}' (auth/403): {exc}. "
+            f"This usually means PSX is blocking requests from this server's IP "
+            f"(common on cloud/hosting IPs). Try again later, or run from a "
+            f"different host — it's a network-origin issue, not a code bug."
+        )
+        print(f"[fetch_stock_data] {LAST_FETCH_ERROR}")
     except psx_exceptions.PSXConnectionError as exc:
-        print(f"[fetch_stock_data] {ticker}: network/connection error after retries: {exc}")
+        LAST_FETCH_ERROR = f"Network/connection error after retries for '{ticker}': {exc}"
+        print(f"[fetch_stock_data] {LAST_FETCH_ERROR}")
     except psx_exceptions.PSXServerError as exc:
-        print(f"[fetch_stock_data] {ticker}: PSX server error (5xx) after retries: {exc}")
+        LAST_FETCH_ERROR = f"PSX server error (5xx) after retries for '{ticker}': {exc}"
+        print(f"[fetch_stock_data] {LAST_FETCH_ERROR}")
     except Exception as exc:  # noqa: BLE001 - surface any other failure
-        print(f"[fetch_stock_data] Unexpected failure for {ticker}: {type(exc).__name__}: {exc}")
+        LAST_FETCH_ERROR = f"Unexpected failure for '{ticker}': {type(exc).__name__}: {exc}"
+        print(f"[fetch_stock_data] {LAST_FETCH_ERROR}")
 
     return pd.DataFrame()
 
