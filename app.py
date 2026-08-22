@@ -109,12 +109,19 @@ html, body, [class*="css"] { font-family: 'Inter', -apple-system, BlinkMacSystem
 /* Chart explanation panel (sits beside each chart) */
 .chart-note {
     background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 16px 18px; height: 100%;
+    padding: 18px 20px; height: 100%; display: flex; flex-direction: column;
 }
-.chart-note .t { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 600; margin-bottom: 10px; }
-.chart-note p { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; margin: 0 0 10px; }
+.chart-note .t { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); font-weight: 600; margin-bottom: 12px; }
+.chart-note p { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.65; margin: 0 0 12px; }
 .chart-note p:last-child { margin-bottom: 0; }
 .chart-note b { color: var(--text-primary); }
+.cn-section { font-size: 0.78rem; font-weight: 600; color: var(--text-primary); margin: 4px 0 6px; }
+.cn-divider { height: 1px; background: var(--border); margin: 14px 0; }
+.cn-stat { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: 0.82rem; }
+.cn-stat span:first-child { color: var(--text-muted); }
+.cn-stat span:last-child { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--text-primary); }
+.cn-stat span.up { color: var(--up); }
+.cn-stat span.down { color: var(--down); }
 
 /* Sidebar disclaimer — smaller, muted */
 .psx-disclaimer { font-size: 0.76rem; line-height: 1.55; color: var(--text-secondary); }
@@ -318,6 +325,12 @@ with tab1:
         latest_macd = df["MACD"].iloc[-1]
         macd_class = "up" if latest_macd >= 0 else "down"
         latest_volume = raw["Volume"].iloc[-1]
+        latest_open = raw["Open"].iloc[-1]
+        day_high = raw["High"].iloc[-1]
+        day_low = raw["Low"].iloc[-1]
+        wk52_window = raw.tail(min(len(raw), 252))
+        wk52_high = wk52_window["High"].max()
+        wk52_low = wk52_window["Low"].min()
 
         st.markdown(f"""
         <div class="kpi-grid">
@@ -325,6 +338,30 @@ with tab1:
             <div class="kpi-label">Last close (PKR)</div>
             <div class="kpi-value">{raw['Close'].iloc[-1]:.2f}</div>
             <div class="kpi-sub {pct_class}">{pct_arrow} {pct_change:+.2f}%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Open</div>
+            <div class="kpi-value">{latest_open:.2f}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Day high</div>
+            <div class="kpi-value">{day_high:.2f}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Day low</div>
+            <div class="kpi-value">{day_low:.2f}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Volume</div>
+            <div class="kpi-value" style="font-size:1.2rem">{latest_volume:,.0f}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">52-week high</div>
+            <div class="kpi-value">{wk52_high:.2f}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">52-week low</div>
+            <div class="kpi-value">{wk52_low:.2f}</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-label">Signal</div>
@@ -338,10 +375,6 @@ with tab1:
           <div class="kpi-card">
             <div class="kpi-label">RSI (14)</div>
             <div class="kpi-value">{sig['rsi']:.1f}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Volume</div>
-            <div class="kpi-value" style="font-size:1.2rem">{latest_volume:,.0f}</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-label">MACD</div>
@@ -393,15 +426,63 @@ with tab1:
         with chart_col:
             st.plotly_chart(fig, use_container_width=True)
         with note_col:
-            st.markdown("""
+            latest = df.iloc[-1]
+            sma_gap_pct = (latest["SMA50"] - latest["SMA200"]) / latest["SMA200"] * 100
+            sma_gap_class = "up" if sma_gap_pct >= 0 else "down"
+            rsi_val = latest["RSI"]
+            if rsi_val >= 70:
+                rsi_zone, rsi_read = "Overbought", "may be due for a pullback"
+            elif rsi_val <= 30:
+                rsi_zone, rsi_read = "Oversold", "may be due for a bounce"
+            else:
+                rsi_zone, rsi_read = "Neutral", "no strong momentum extreme either way"
+            macd_val = latest["MACD"]
+            macd_signal_val = latest["MACD_signal"]
+            macd_hist_val = latest["MACD_hist"]
+            hist_class = "up" if macd_hist_val >= 0 else "down"
+            macd_state = "above" if macd_val > macd_signal_val else "below"
+            macd_bias = "bullish" if macd_val > macd_signal_val else "bearish"
+
+            st.markdown(f"""
             <div class="chart-note">
               <div class="t">What this shows</div>
-              <p><b>Price panel</b> — closing price vs 50-day and 200-day moving averages.
-              SMA50 above SMA200 signals an uptrend (golden cross); below signals a downtrend.</p>
-              <p><b>RSI panel</b> — momentum, 0–100. Above 70 = overbought (possible pullback),
-              below 30 = oversold (possible bounce).</p>
-              <p><b>MACD panel</b> — trend momentum. MACD crossing above its signal line
-              often precedes upward moves, and vice versa.</p>
+              <p>These three panels are the technical inputs behind the signal above — price
+              trend, momentum, and momentum change — read together rather than in isolation.</p>
+
+              <div class="cn-divider"></div>
+              <div class="cn-section">Price &amp; moving averages</div>
+              <p>The 50-day average reacts quickly to recent price moves; the 200-day average
+              is slower and reflects the longer-term trend. When SMA50 sits above SMA200
+              (a "golden cross" state) the stock is trending up over both horizons — the
+              reverse ("death cross") signals a downtrend.</p>
+              <div class="cn-stat"><span>SMA50</span><span>{latest['SMA50']:.2f}</span></div>
+              <div class="cn-stat"><span>SMA200</span><span>{latest['SMA200']:.2f}</span></div>
+              <div class="cn-stat"><span>Gap</span><span class="{sma_gap_class}">{sma_gap_pct:+.1f}%</span></div>
+              <p>For {ticker}, SMA50 is currently <b>{"above" if sma_gap_pct >= 0 else "below"}</b>
+              SMA200 by {abs(sma_gap_pct):.1f}% — consistent with the <b>{sig['trend'].lower()}</b> trend read.</p>
+
+              <div class="cn-divider"></div>
+              <div class="cn-section">RSI (14)</div>
+              <p>Measures how fast and how far price has moved recently, scaled 0–100.
+              Above 70 typically means buying has been aggressive relative to history;
+              below 30 means selling has. Neither guarantees a reversal, but both flag
+              stretched conditions worth watching.</p>
+              <div class="cn-stat"><span>Current</span><span>{rsi_val:.1f}</span></div>
+              <div class="cn-stat"><span>Zone</span><span>{rsi_zone}</span></div>
+              <p>At {rsi_val:.1f}, {ticker} is in the <b>{rsi_zone.lower()}</b> zone — {rsi_read}.</p>
+
+              <div class="cn-divider"></div>
+              <div class="cn-section">MACD</div>
+              <p>The difference between two exponential moving averages (12-day and 26-day),
+              plotted against its own 9-day signal line. When MACD crosses above its signal
+              line, short-term momentum is accelerating upward; below, it's decelerating
+              or reversing down. The histogram (MACD minus signal) shows how strong that
+              gap is.</p>
+              <div class="cn-stat"><span>MACD</span><span>{macd_val:+.2f}</span></div>
+              <div class="cn-stat"><span>Signal line</span><span>{macd_signal_val:+.2f}</span></div>
+              <div class="cn-stat"><span>Histogram</span><span class="{hist_class}">{macd_hist_val:+.2f}</span></div>
+              <p>MACD is currently <b>{macd_state}</b> its signal line for {ticker} —
+              a near-term <b>{macd_bias}</b> reading.</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -445,13 +526,31 @@ with tab1:
             outperform_html = ("The strategy <b>outperformed</b> passive holding"
                                 if bt['strategy_return_pct'] > bt['buy_and_hold_return_pct']
                                 else "Passive holding <b>outperformed</b> the strategy")
+            gap_pp = bt['strategy_return_pct'] - bt['buy_and_hold_return_pct']
+            gap_class = "up" if gap_pp >= 0 else "down"
+            final_equity = bt.get("final_equity", 100_000 * (1 + bt['strategy_return_pct'] / 100))
             st.markdown(f"""
             <div class="chart-note">
               <div class="t">What this shows</div>
               <p>Portfolio value if you'd mechanically followed this model's Buy/Sell
-              signals (<b>blue</b>) vs simply buying and holding the stock the whole
-              period (<b>gray, dashed</b>).</p>
-              <p>{outperform_html} over this backtest window — {bt['num_trades']} trades were made.</p>
+              signals (<b>blue</b>) vs simply buying and holding {ticker} for the same
+              period (<b>gray, dashed</b>) — both starting from the same PKR 100,000
+              on the held-out test window the model was never trained on.</p>
+
+              <div class="cn-divider"></div>
+              <div class="cn-section">Result</div>
+              <div class="cn-stat"><span>Strategy return</span><span class="{strat_class}">{bt['strategy_return_pct']:+.2f}%</span></div>
+              <div class="cn-stat"><span>Buy &amp; hold return</span><span class="{bh_class}">{bt['buy_and_hold_return_pct']:+.2f}%</span></div>
+              <div class="cn-stat"><span>Difference</span><span class="{gap_class}">{gap_pp:+.2f} pp</span></div>
+              <div class="cn-stat"><span>Trades made</span><span>{bt['num_trades']}</span></div>
+              <div class="cn-stat"><span>Ending value</span><span>{final_equity:,.0f}</span></div>
+              <p>{outperform_html} by {abs(gap_pp):.2f} percentage points over this window.</p>
+
+              <div class="cn-divider"></div>
+              <div class="cn-section">Reading this fairly</div>
+              <p>No transaction costs, slippage, or taxes are modeled — real returns would
+              be lower on both lines. A short backtest window with few trades isn't a
+              statistically reliable performance guarantee either way.</p>
             </div>
             """, unsafe_allow_html=True)
 
