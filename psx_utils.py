@@ -190,6 +190,18 @@ def load_bundled_data(ticker: str, data_dir: str = "data") -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def get_bundled_tickers(data_dir: str = "data") -> list:
+    """
+    List every ticker that actually has a bundled CSV snapshot available —
+    the source of truth for what the app can reliably show, regardless of
+    whether live PSX access works from wherever it's hosted.
+    """
+    folder = _resolve_data_dir(data_dir)
+    if not folder.exists():
+        return []
+    return sorted(p.stem.upper() for p in folder.glob("*.csv"))
+
+
 def get_stock_data(ticker: str, years_back: int = 3, data_dir: str = "data"):
     """
     Try a live PSX fetch first; if that fails (blocked IP, network error, etc.),
