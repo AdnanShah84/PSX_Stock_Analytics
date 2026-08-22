@@ -25,6 +25,7 @@ from psx_utils import (
     generate_signal,
     backtest_signals,
 )
+import psx_utils as _psx_utils_module
 
 st.set_page_config(page_title="PSX Stock Analytics", page_icon="📈", layout="wide")
 
@@ -45,12 +46,16 @@ def get_ticker_universe():
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def load_and_analyze(ticker: str, years_back: int):
     raw = fetch_stock_data(ticker, years_back=years_back)
-    if raw.empty or len(raw) < 210:
-        return None
+    if raw.empty:
+        return {"error": _psx_utils_module.LAST_FETCH_ERROR or "Unknown fetch failure."}
+    if len(raw) < 210:
+        return {"error": f"Only {len(raw)} rows returned for {ticker} — need at least 210 "
+                          f"(~200 trading days) to compute SMA200. Try a longer history window."}
     df = add_technical_indicators(raw)
     X, y, feat_df = build_features_and_labels(df)
     if len(X) < 100:
-        return None
+        return {"error": f"Only {len(X)} usable feature rows after indicator calculation "
+                          f"for {ticker} — not enough for a reliable train/test split."}
     model, X_train, X_test, y_train, y_test = train_model(X, y)
     test_df = feat_df.loc[X_test.index]
     test_accuracy = model.score(X_test, y_test)
@@ -74,7 +79,7 @@ def scan_watchlist(tickers: list, years_back: int):
     rows = []
     for tkr in tickers:
         result = load_and_analyze(tkr, years_back)
-        if result is None:
+        if result is None or "error" in result:
             continue
         sig = result["signal"]
         rows.append({
@@ -124,8 +129,10 @@ with tab1:
     with st.spinner(f"Fetching {ticker} from PSX and running model..."):
         result = load_and_analyze(ticker, years_back)
 
-    if result is None:
-        st.error(f"Not enough data returned for {ticker}. Try a different ticker or a longer window.")
+    if result is None or "error" in result:
+        error_msg = result.get("error") if result else "Unknown error."
+        st.error(f"**Data fetch failed for {ticker}:**\n\n{error_msg}")
+        st.caption("This is the actual reason from the server — no need to check logs separately.")
     else:
         sig = result["signal"]
         raw = result["raw"]
