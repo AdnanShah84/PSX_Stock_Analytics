@@ -32,6 +32,108 @@ import psx_utils as _psx_utils_module
 st.set_page_config(page_title="PSX Stock Analytics", page_icon="📈", layout="wide")
 
 # --------------------------------------------------------------------------- #
+# Custom styling — Streamlit's defaults are intentionally plain; this layers a
+# cleaner look on top (card-style KPIs, colored signal badges, tighter type)
+# without touching any of the underlying logic above.
+# --------------------------------------------------------------------------- #
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
+    max-width: 1100px;
+}
+
+/* Header */
+.psx-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 2px;
+}
+.psx-header .logo { font-size: 1.9rem; line-height: 1; }
+.psx-header h1 {
+    margin: 0;
+    font-size: 1.85rem;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+}
+.psx-subtitle {
+    color: #64748b;
+    font-size: 0.95rem;
+    margin-bottom: 1.4rem;
+}
+.psx-sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 2px;
+}
+.psx-sidebar-header .logo { font-size: 1.5rem; }
+.psx-sidebar-header .name { font-size: 1.15rem; font-weight: 700; color: #0f172a; }
+
+/* KPI card grid */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 0.9rem 0 1.3rem;
+}
+.kpi-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.kpi-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.kpi-value { font-size: 1.5rem; font-weight: 700; color: #0f172a; line-height: 1.15; }
+.kpi-value.up { color: #16a34a; }
+.kpi-value.down { color: #dc2626; }
+.kpi-sub { font-size: 0.8rem; font-weight: 600; margin-top: 6px; }
+.kpi-sub.up { color: #16a34a; }
+.kpi-sub.down { color: #dc2626; }
+.kpi-sub.neutral { color: #64748b; }
+
+/* Signal badge */
+.signal-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 1.15rem;
+}
+.signal-badge.buy  { background: #dcfce7; color: #15803d; }
+.signal-badge.hold { background: #fef3c7; color: #b45309; }
+.signal-badge.sell { background: #fee2e2; color: #b91c1c; }
+
+/* Sidebar */
+[data-testid="stSidebar"] { background: #f8fafc; border-right: 1px solid #e2e8f0; }
+[data-testid="stSidebar"] .stCaption { color: #94a3b8; }
+
+/* Section headers */
+h2, h3 { color: #0f172a; font-weight: 600; }
+</style>
+""", unsafe_allow_html=True)
+
+# --------------------------------------------------------------------------- #
 # Caching — avoid re-scraping PSX on every interaction. Data refreshes every
 # 15 minutes automatically, or immediately via the manual "Refresh now" button.
 # --------------------------------------------------------------------------- #
@@ -110,7 +212,12 @@ def scan_watchlist(tickers: list, years_back: int):
 # Sidebar
 # --------------------------------------------------------------------------- #
 
-st.sidebar.title("📈 PSX Analytics")
+st.sidebar.markdown("""
+<div class="psx-sidebar-header">
+  <span class="logo">📈</span>
+  <span class="name">PSX Analytics</span>
+</div>
+""", unsafe_allow_html=True)
 st.sidebar.caption("Data: PSX Data Portal (EOD) · Not a licensed real-time feed")
 
 TICKERS = get_ticker_universe()
@@ -134,7 +241,13 @@ st.sidebar.caption(f"Last loaded: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 # Main
 # --------------------------------------------------------------------------- #
 
-st.title("Pakistan Stock Exchange — Analytics & Signal Dashboard")
+st.markdown("""
+<div class="psx-header">
+  <span class="logo">🇵🇰</span>
+  <h1>Pakistan Stock Exchange — Analytics &amp; Signal Dashboard</h1>
+</div>
+<div class="psx-subtitle">Technical indicators + machine learning signals for KSE-100 stocks</div>
+""", unsafe_allow_html=True)
 
 tab1, tab2, tab3 = st.tabs(["📊 Stock Detail", "🧭 Watchlist Scan", "ℹ️ About"])
 
@@ -156,14 +269,34 @@ with tab1:
                      f"as of **{result['as_of']}** (bundled with the app). "
                      f"Click 'Refresh data now' to retry live fetch.")
 
-        decision_color = {"BUY": "🟢", "HOLD": "🟡", "SELL": "🔴"}[sig["decision"]]
+        decision_class = sig["decision"].lower()
+        decision_icon = {"buy": "▲", "hold": "●", "sell": "▼"}[decision_class]
+        pct_change = raw["Close"].pct_change().iloc[-1] * 100
+        pct_class = "up" if pct_change >= 0 else "down"
+        pct_arrow = "▲" if pct_change >= 0 else "▼"
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Last Close (PKR)", f"{raw['Close'].iloc[-1]:.2f}",
-                   f"{raw['Close'].pct_change().iloc[-1]*100:+.2f}%")
-        c2.metric("Signal", f"{decision_color} {sig['decision']}", f"{sig['confidence']:.0%} confidence")
-        c3.metric("Trend", sig["trend"])
-        c4.metric("RSI (14)", f"{sig['rsi']:.1f}")
+        st.markdown(f"""
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Last close (PKR)</div>
+            <div class="kpi-value">{raw['Close'].iloc[-1]:.2f}</div>
+            <div class="kpi-sub {pct_class}">{pct_arrow} {pct_change:+.2f}%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Signal</div>
+            <div class="signal-badge {decision_class}">{decision_icon} {sig['decision']}</div>
+            <div class="kpi-sub neutral">{sig['confidence']:.0%} confidence</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Trend</div>
+            <div class="kpi-value" style="font-size:1.25rem">{sig['trend']}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">RSI (14)</div>
+            <div class="kpi-value">{sig['rsi']:.1f}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         with st.expander("Why this signal? (reasoning)"):
             for r in sig["reasons"]:
@@ -180,30 +313,61 @@ with tab1:
         # Price + indicators chart
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.5, 0.25, 0.25],
                              subplot_titles=("Price + Moving Averages", "RSI (14)", "MACD"))
-        fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name="Close"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["SMA50"], name="SMA50"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["SMA200"], name="SMA200"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI"), row=2, col=1)
-        fig.add_hline(y=70, line_dash="dot", row=2, col=1)
-        fig.add_hline(y=30, line_dash="dot", row=2, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], name="MACD"), row=3, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df["MACD_signal"], name="Signal"), row=3, col=1)
-        fig.update_layout(height=700, showlegend=True)
+        fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name="Close",
+                                  line=dict(color="#2563eb", width=2)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["SMA50"], name="SMA50",
+                                  line=dict(color="#f59e0b", width=1.3)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["SMA200"], name="SMA200",
+                                  line=dict(color="#94a3b8", width=1.3)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI",
+                                  line=dict(color="#7c3aed", width=1.5)), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dot", line_color="#dc2626", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dot", line_color="#16a34a", row=2, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], name="MACD",
+                                  line=dict(color="#2563eb", width=1.5)), row=3, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["MACD_signal"], name="Signal",
+                                  line=dict(color="#f59e0b", width=1.5)), row=3, col=1)
+        fig.update_layout(height=700, showlegend=True, plot_bgcolor="white", paper_bgcolor="white",
+                           font=dict(family="Inter, sans-serif", color="#334155"),
+                           margin=dict(l=10, r=10, t=40, b=10))
+        fig.update_xaxes(gridcolor="#f1f5f9")
+        fig.update_yaxes(gridcolor="#f1f5f9")
         st.plotly_chart(fig, use_container_width=True)
 
         # Backtest
         st.subheader("Backtest — Strategy vs Buy & Hold")
         bt = result["backtest_summary"]
-        b1, b2, b3 = st.columns(3)
-        b1.metric("Strategy return", f"{bt['strategy_return_pct']:+.2f}%")
-        b2.metric("Buy & Hold return", f"{bt['buy_and_hold_return_pct']:+.2f}%")
-        b3.metric("Number of trades", bt["num_trades"])
+        strat_class = "up" if bt["strategy_return_pct"] >= 0 else "down"
+        bh_class = "up" if bt["buy_and_hold_return_pct"] >= 0 else "down"
+        st.markdown(f"""
+        <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
+          <div class="kpi-card">
+            <div class="kpi-label">Strategy return</div>
+            <div class="kpi-value {strat_class}">{bt['strategy_return_pct']:+.2f}%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Buy &amp; hold return</div>
+            <div class="kpi-value {bh_class}">{bt['buy_and_hold_return_pct']:+.2f}%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Number of trades</div>
+            <div class="kpi-value">{bt['num_trades']}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         eq = result["equity_df"]
         fig2 = go.Figure()
-        fig2.add_trace(go.Scatter(x=eq.index, y=eq["equity"], name="Strategy"))
-        fig2.add_trace(go.Scatter(x=eq.index, y=eq["buy_and_hold"], name="Buy & Hold"))
-        fig2.update_layout(height=350, xaxis_title="Date", yaxis_title="Portfolio Value (PKR)")
+        fig2.add_trace(go.Scatter(x=eq.index, y=eq["equity"], name="Strategy",
+                                   line=dict(color="#2563eb", width=2)))
+        fig2.add_trace(go.Scatter(x=eq.index, y=eq["buy_and_hold"], name="Buy & Hold",
+                                   line=dict(color="#94a3b8", width=2, dash="dot")))
+        fig2.update_layout(height=350, xaxis_title="Date", yaxis_title="Portfolio Value (PKR)",
+                            plot_bgcolor="white", paper_bgcolor="white",
+                            font=dict(family="Inter, sans-serif", color="#334155"),
+                            margin=dict(l=10, r=10, t=20, b=10))
+        fig2.update_xaxes(gridcolor="#f1f5f9")
+        fig2.update_yaxes(gridcolor="#f1f5f9")
         st.plotly_chart(fig2, use_container_width=True)
 
         if not result["trades_df"].empty:
@@ -220,9 +384,9 @@ with tab2:
             st.warning("No results — try different tickers.")
         else:
             def highlight(row):
-                color = {"BUY": "background-color: #d4f7d4",
-                         "SELL": "background-color: #f7d4d4",
-                         "HOLD": "background-color: #f7f3d4"}.get(row["Decision"], "")
+                color = {"BUY": "background-color: #dcfce7; color: #15803d;",
+                         "SELL": "background-color: #fee2e2; color: #b91c1c;",
+                         "HOLD": "background-color: #fef3c7; color: #b45309;"}.get(row["Decision"], "")
                 return [color] * len(row)
             st.dataframe(scan_df.style.apply(highlight, axis=1), use_container_width=True)
 
@@ -234,7 +398,7 @@ machine learning model trained on historical PSX price action to generate Buy / 
 signals for KSE-100 stocks, backed by a backtest against a buy-and-hold benchmark.
 
 **Data source:** Official PSX Data Portal (`dps.psx.com.pk`) end-of-day historical data,
-via the open-source `psx-data-reader` package.
+via the actively-maintained `psxdata` package.
 
 **Important limitations:**
 - This is **end-of-day** data, not a licensed real-time/intraday feed (PSX's live feed is a
@@ -244,5 +408,5 @@ via the open-source `psx-data-reader` package.
 - This is an **educational decision-support tool**, not financial advice. Always apply your
   own judgement before acting on real capital.
 
-**Tech stack:** Python · scikit-learn · Streamlit · Plotly · psx-data-reader
+**Tech stack:** Python · scikit-learn · Streamlit · Plotly · psxdata
 """)
