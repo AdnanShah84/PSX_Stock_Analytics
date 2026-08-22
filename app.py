@@ -417,7 +417,11 @@ with tab1:
                                   line=dict(color="#3b82f6", width=1.5)), row=3, col=1)
         fig.add_trace(go.Scatter(x=chart_df.index, y=chart_df["MACD_signal"], name="Signal",
                                   line=dict(color="#fbbf24", width=1.5)), row=3, col=1)
-        fig.update_layout(height=700, showlegend=True, **CHART_LAYOUT)
+        # Height is set generously (1150px) to roughly match the length of the
+        # explanation panel beside it (Section "What this shows"), so both
+        # columns end at about the same point. If they drift apart after you
+        # edit that panel's text, nudge this number up/down to re-match.
+        fig.update_layout(height=1150, showlegend=True, **CHART_LAYOUT)
         fig.update_xaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
         fig.update_yaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
         fig.update_annotations(font=dict(color="#8b949e", size=12))
@@ -514,7 +518,9 @@ with tab1:
                                    line=dict(color="#3b82f6", width=2)))
         fig2.add_trace(go.Scatter(x=eq.index, y=eq["buy_and_hold"], name="Buy & hold",
                                    line=dict(color="#5b6472", width=2, dash="dot")))
-        fig2.update_layout(height=340, xaxis_title="Date", yaxis_title="Portfolio value (PKR)",
+        # Same idea as the chart above — height picked to roughly match the
+        # "Result" + "Reading this fairly" note panel beside it.
+        fig2.update_layout(height=620, xaxis_title="Date", yaxis_title="Portfolio value (PKR)",
                             **CHART_LAYOUT)
         fig2.update_xaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
         fig2.update_yaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID)
