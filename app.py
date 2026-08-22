@@ -18,6 +18,7 @@ from psx_utils import (
     FALLBACK_TICKERS,
     get_kse100_tickers,
     fetch_stock_data,
+    get_stock_data,
     get_live_quote,
     add_technical_indicators,
     build_features_and_labels,
@@ -45,11 +46,12 @@ def get_ticker_universe():
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def load_and_analyze(ticker: str, years_back: int):
-    raw = fetch_stock_data(ticker, years_back=years_back)
+    raw, source, as_of = get_stock_data(ticker, years_back=years_back)
     if raw.empty:
-        return {"error": _psx_utils_module.LAST_FETCH_ERROR or "Unknown fetch failure."}
+        return {"error": _psx_utils_module.LAST_FETCH_ERROR or "Unknown fetch failure. "
+                          "No bundled data/ snapshot found either."}
     if len(raw) < 210:
-        return {"error": f"Only {len(raw)} rows returned for {ticker} — need at least 210 "
+        return {"error": f"Only {len(raw)} rows available for {ticker} — need at least 210 "
                           f"(~200 trading days) to compute SMA200. Try a longer history window."}
     df = add_technical_indicators(raw)
     X, y, feat_df = build_features_and_labels(df)
@@ -63,6 +65,8 @@ def load_and_analyze(ticker: str, years_back: int):
     equity_df, trades_df, backtest_summary = backtest_signals(model, test_df)
     return {
         "raw": raw,
+        "source": source,
+        "as_of": as_of,
         "df": df,
         "feat_df": feat_df,
         "model": model,
@@ -137,6 +141,11 @@ with tab1:
         sig = result["signal"]
         raw = result["raw"]
         df = result["df"]
+
+        if result.get("source") == "bundled":
+            st.info(f"⚠️ Live PSX fetch unavailable from this server — showing a snapshot "
+                     f"as of **{result['as_of']}** (bundled with the app). "
+                     f"Click 'Refresh data now' to retry live fetch.")
 
         decision_color = {"BUY": "🟢", "HOLD": "🟡", "SELL": "🔴"}[sig["decision"]]
 
